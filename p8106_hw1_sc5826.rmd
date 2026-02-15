@@ -1,0 +1,70 @@
+---
+title: "HW 1"
+author: "Shivalika Chavan"
+date: "2026-02-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(glmnet) 
+library(caret) 
+library(tidymodels) 
+library(corrplot) 
+library(ggplot2) 
+library(plotmo) 
+library(ggrepel) 
+
+housing_train = read.csv("./data/housing_training.csv") |> janitor::clean_names()
+housing_test = read.csv("./data/housing_test.csv") |> janitor::clean_names()
+```
+
+## a
+
+```{r}
+set.seed(1234)
+
+y = housing_train |> pull(sale_price) 
+x = model.matrix(sale_price ~., housing_train)[,-1]
+
+lambda = 10^(seq(-5, 5, 0.2))
+lasso_cv = cv.glmnet(x, y, 
+                     alpha = 1, 
+                     lambda = lambda)
+lasso_fit = glmnet(x, y, 
+                     alpha = 1, 
+                     lambda = lambda)
+
+lambda_min = lasso_cv[["lambda.min"]] # minimum mean cross-validated error
+lambda_1se = lasso_cv[["lambda.1se"]] # largest value of lambda such that error is within 1 standard error of the cross-validated errors for lambda.min.
+CVM_min = lasso_cv |> broom::tidy() |> filter(lambda == lambda_min) |> pull(estimate)
+CVM_1se = lasso_cv |> broom::tidy() |> filter(lambda == lambda_1se) |> pull(estimate)
+```
+
+The $\lambda$ value with the smallest CVM (`r CVM_min`) is `r lambda_min`. 
+
+```{r}
+plot(lasso_cv)
+plot(lasso_fit)
+plot_glmnet(lasso_cv$glmnet.fit)
+```
+
+Test Error with $\lambda$ = `r round(lambda_min, 2)`:
+```{r}
+x_test = model.matrix(sale_price ~ ., housing_test)[,-1]
+y_test = housing_test$sale_price
+
+y_pred = predict(lasso_cv, newx = x_test, s = lambda_min, type = "response")
+
+test_error <- mean((y_test - y_pred)^2)
+```
+
+The test error is `r round(test_error, 2)`. 
+
+```{r}
+coef_1se = predict(lasso_cv, type = "coefficients", s = lambda_1se)
+num_predictors_1se = sum(coef_1se != 0) - 1
+```
+
+When using $\lambda_{1SE}$, there are `r num_predictors_1se` predictors. 
