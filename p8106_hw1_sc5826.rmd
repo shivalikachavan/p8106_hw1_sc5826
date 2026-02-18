@@ -14,10 +14,20 @@ library(tidymodels)
 library(corrplot) 
 library(ggplot2) 
 library(plotmo) 
-library(ggrepel) 
+library(ggrepel)
+library(pls)
+```
 
+
+```{r}
 housing_train = read.csv("./data/housing_training.csv") |> janitor::clean_names()
 housing_test = read.csv("./data/housing_test.csv") |> janitor::clean_names()
+
+y = housing_train |> pull(sale_price) 
+x = model.matrix(sale_price ~., housing_train)[,-1]
+
+x_test = model.matrix(sale_price ~ ., housing_test)[,-1]
+y_test = housing_test$sale_price
 ```
 
 ## a
@@ -25,14 +35,10 @@ housing_test = read.csv("./data/housing_test.csv") |> janitor::clean_names()
 ```{r}
 set.seed(1234)
 
-y = housing_train |> pull(sale_price) 
-x = model.matrix(sale_price ~., housing_train)[,-1]
+lambda = 10^(seq(-5, 5, 0.2)) # lambda grid of lambda values for penalty tuning
 
-lambda = 10^(seq(-5, 5, 0.2))
+# k-fold cross-validation for Lasso (alpha = 1) over the lambda values
 lasso_cv = cv.glmnet(x, y, 
-                     alpha = 1, 
-                     lambda = lambda)
-lasso_fit = glmnet(x, y, 
                      alpha = 1, 
                      lambda = lambda)
 
@@ -46,17 +52,12 @@ The $\lambda$ value with the smallest CVM (`r CVM_min`) is `r lambda_min`.
 
 ```{r}
 plot(lasso_cv)
-plot(lasso_fit)
 plot_glmnet(lasso_cv$glmnet.fit)
 ```
 
 Test Error with $\lambda$ = `r round(lambda_min, 2)`:
 ```{r}
-x_test = model.matrix(sale_price ~ ., housing_test)[,-1]
-y_test = housing_test$sale_price
-
 y_pred = predict(lasso_cv, newx = x_test, s = lambda_min, type = "response")
-
 test_error <- mean((y_test - y_pred)^2)
 ```
 
@@ -64,7 +65,74 @@ The test error is `r round(test_error, 2)`.
 
 ```{r}
 coef_1se = predict(lasso_cv, type = "coefficients", s = lambda_1se)
+# Count non-zero coefficients to determine the number of predictors (excluding intercept)
 num_predictors_1se = sum(coef_1se != 0) - 1
 ```
 
 When using $\lambda_{1SE}$, there are `r num_predictors_1se` predictors. 
+
+## b
+
+```{r}
+set.seed(1234)
+
+alpha = seq(0, 1, length = 21) # alpha grid ranging from 0 (Ridge) to 1 (Lasso)
+lambda = 10^(seq(-5, 5, 0.2)) # lambda grid of lambda values for penalty tuning
+
+# Iterate through each alpha to perform cross-validation and store results in a tibble
+enet_cv_results = tibble(alpha = alpha) |> 
+  mutate(
+    cv_fit = map(alpha, ~cv.glmnet(x, y, alpha = .x, lambda = lambda)), # runs glmnet for each alpha
+    min_cvm = map_dbl(cv_fit, ~min(.x$cvm)) # finds min CVM for each model at each alpha
+  )
+
+# pull the alpha value with the lowest overall CVM
+enet_alpha_min_cvm = enet_cv_results |> 
+  filter(min_cvm == min(min_cvm)) |> 
+  pull(alpha)
+
+# pull the corresponding model with that optimal alpha
+best_enet_cv_fit = enet_cv_results |> 
+  filter(alpha == enet_alpha_min_cvm) |> 
+  pull(cv_fit) |> 
+  pluck(1)
+
+# pull 1SE lambda for optimal alpha
+lambda_1se_enet = best_enet_cv_fit$lambda.1se
+
+# make predictions using optimal alpha and 1SE lambda at that alpha
+y_pred = predict(best_enet_cv_fit, newx = x_test, s = "lambda.1se") 
+test_error = mean((y_test - y_pred)^2)
+```
+
+The selected tuning parameters are $\alpha$ = `r round(enet_alpha_min_cvm, 2)` and $\lambda_{1SE}$ = `r round(lambda_1se_enet, 2)`. The model with these parameters has a test error of `r round(test_error, 2)`. 
+
+Applying the 1SE rule is a bit more complicated with elastic net, because it has two parameters, $\alpha$ and $\lambda$. The 1SE rule, when used in the Lasso model, is easy to implement because a larger value for $\lambda$ means fewer non-zero coefficients and a more parsimonious model. In elastic net models, this will work when $\alpha$ is fixed at a single value.
+
+## c
+
+```{r}
+set.seed(1234)
+
+pls_mod <- plsr(sale_price ~ ., 
+                data = housing_train, 
+                scale = TRUE, # similar scaling importance as PCR
+                validation = "CV")
+summary(pls_mod)
+
+# plot cross-validated MSEP for PLS
+validationplot(pls_mod, val.type = "MSEP", legendpos = "topright")
+
+# determine the optimal number of components
+cv_mse <- RMSEP(pls_mod)
+ncomp_cv <- which.min(cv_mse$val[1,,]) - 1
+ncomp_cv
+
+# calculate test MSE
+predy2_pls <- predict(pls_mod, newdata = housing_test, 
+                      ncomp = ncomp_cv)
+
+mspe = mean((y_test - predy2_pls)^2)
+```
+
+There are `r ncomp_cv |> unname()` components in the partial least squares model, with an MSPE of `r mspe`.
