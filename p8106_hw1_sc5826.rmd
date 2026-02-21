@@ -42,29 +42,29 @@ lasso_cv = cv.glmnet(x, y,
                      alpha = 1, 
                      lambda = lambda)
 
-lambda_min = lasso_cv[["lambda.min"]] # minimum mean cross-validated error
-lambda_1se = lasso_cv[["lambda.1se"]] # largest value of lambda such that error is within 1 standard error of the cross-validated errors for lambda.min.
-CVM_min = lasso_cv |> broom::tidy() |> filter(lambda == lambda_min) |> pull(estimate)
-CVM_1se = lasso_cv |> broom::tidy() |> filter(lambda == lambda_1se) |> pull(estimate)
+lambda_min_glmnet = lasso_cv[["lambda.min"]] # minimum mean cross-validated error
+lambda_1se_glmnet = lasso_cv[["lambda.1se"]] # largest value of lambda such that error is within 1 standard error of the cross-validated errors for lambda.min.
+CVM_min = lasso_cv |> broom::tidy() |> filter(lambda == lambda_min_glmnet) |> pull(estimate)
+CVM_1se = lasso_cv |> broom::tidy() |> filter(lambda == lambda_1se_glmnet) |> pull(estimate)
 ```
 
-The $\lambda$ value with the smallest CVM (`r CVM_min`) is `r lambda_min`. 
+The $\lambda$ value with the smallest CVM (`r CVM_min`) is `r lambda_min_glmnet`. 
 
 ```{r}
 plot(lasso_cv)
 plot_glmnet(lasso_cv$glmnet.fit)
 ```
 
-Test Error with $\lambda$ = `r round(lambda_min, 2)`:
+Test Error with $\lambda$ = `r round(lambda_min_glmnet, 2)`:
 ```{r}
-y_pred = predict(lasso_cv, newx = x_test, s = lambda_min, type = "response")
+y_pred = predict(lasso_cv, newx = x_test, s = lambda_min_glmnet, type = "response")
 mspe_lasso <- mean((y_test - y_pred)^2)
 ```
 
 The test error is `r round(mspe_lasso, 2)`. 
 
 ```{r}
-coef_1se = predict(lasso_cv, type = "coefficients", s = lambda_1se)
+coef_1se = predict(lasso_cv, type = "coefficients", s = lambda_1se_glmnet)
 # Count non-zero coefficients to determine the number of predictors (excluding intercept)
 num_predictors_1se = sum(coef_1se != 0) - 1
 ```
@@ -149,3 +149,27 @@ knitr::kable(summary)
 ```
 
 Comparing the mean squared predicted error across the three models, the elastic net model is the best model for making predictions. This means that the model likely benefits from the balance of LASSO and Ridge ($\lambda$, $\alpha$) penalties, as compared to the LASSO model, which only has the $\lambda$ penalty. 
+
+## e - Retraining LASSO model using caret instead of glmnet
+```{r}
+set.seed(1234)
+
+ctrl1 = trainControl(method = "cv", number = 10) #cross validation, in this case 10-fold
+
+lasso_caret = train(sale_price ~ .,
+                   data = housing_train,
+                   method = "glmnet",
+                   tuneGrid = expand.grid(alpha = 1, 
+                                          lambda = lambda),
+                   trControl = ctrl1)
+plot(lasso_caret, xTrans = log)
+
+lambda_min_caret = lasso_caret$bestTune$lambda
+
+tibble(
+  package = c("caret (min)", "glmnet (min)", "glmnet (1SE)"),
+  lambda = c(lambda_min_caret, lambda_min_glmnet, lambda_1se_glmnet)
+) |> knitr::kable(digits = 2)
+```
+
+The "best" values for $\lambda$ differ slightly between `caret` and `cv.glmnet`. However, these two values are much closer to each other than they are to the 1SE value found using `cv.glmnet`. While they will result in slightly different models, their cross-validation errors will be within 1SE of each other. The reason for this discrepancy is the difference in internal functions; specifically, how each package assigns observations to k cross-validation folds, even when the random seed `set.seed(1234)` is kept consistent.
