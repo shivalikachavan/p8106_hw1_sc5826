@@ -23,6 +23,18 @@ library(pls)
 housing_train = read.csv("./data/housing_training.csv") |> janitor::clean_names()
 housing_test = read.csv("./data/housing_test.csv") |> janitor::clean_names()
 
+ordinal_vars = c("Overall_Qual",
+                  "Kitchen_Qual",
+                  "Fireplace_Qu",
+                  "Exter_Qual")
+ 
+for (v in ordinal_vars) {
+  if (v %in% colnames(housing_train)) {
+    housing_train[[v]] <- as.ordered(housing_train[[v]])
+    housing_test[[v]]  <- as.ordered(housing_test[[v]])
+  }
+}
+
 y = housing_train |> pull(sale_price) 
 x = model.matrix(sale_price ~., housing_train)[,-1]
 
@@ -49,6 +61,7 @@ CVM_1se = lasso_cv |> broom::tidy() |> filter(lambda == lambda_1se_glmnet) |> pu
 ```
 
 The $\lambda$ value with the smallest CVM (`r CVM_min`) is `r lambda_min_glmnet`. 
+The $\lambda$ value with the 1SE CVM (`r CVM_1se`) is `r lambda_1se_glmnet`. 
 
 ```{r}
 plot(lasso_cv)
