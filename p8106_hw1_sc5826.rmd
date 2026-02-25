@@ -20,14 +20,83 @@ library(pls)
 
 
 ```{r}
-housing_train = read.csv("./data/housing_training.csv") |> janitor::clean_names()
-housing_test = read.csv("./data/housing_test.csv") |> janitor::clean_names()
+housing_train = read.csv("./data/housing_training.csv") |> 
+  janitor::clean_names() |> 
+  mutate(
+    overall_qual = factor(overall_qual, 
+                      levels = c("Very_Excellent",
+                                 "Excellent", 
+                                 "Very_Good", 
+                                 "Good", 
+                                 "Above_Average", 
+                                 "Average", 
+                                 "Below_Average", 
+                                 "Fair"),
+                      ordered = TRUE),
+    kitchen_qual = factor(kitchen_qual, 
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Typical", 
+                                 "Fair"),
+                      ordered = TRUE),
+    fireplace_qu = factor(fireplace_qu,
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Fair",
+                                 "Poor", 
+                                 "No_Fireplace"
+                                 ),
+                      ordered = TRUE),
+    fireplace_qu = replace_na(fireplace_qu, "No_Fireplace"),
+    exter_qual = factor(exter_qual, 
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Typical", 
+                                 "Fair"),
+                      ordered = TRUE)
+  ) 
+
+housing_test = read.csv("./data/housing_test.csv") |> 
+  janitor::clean_names() |> 
+  mutate(
+    overall_qual = factor(overall_qual, 
+                      levels = c("Very_Excellent",
+                                 "Excellent", 
+                                 "Very_Good", 
+                                 "Good", 
+                                 "Above_Average", 
+                                 "Average", 
+                                 "Below_Average", 
+                                 "Fair"),
+                      ordered = TRUE),
+    kitchen_qual = factor(kitchen_qual, 
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Typical", 
+                                 "Fair"),
+                      ordered = TRUE),
+    fireplace_qu = factor(fireplace_qu,
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Fair",
+                                 "Poor", 
+                                 "No_Fireplace"
+                                 ),
+                      ordered = TRUE),
+    fireplace_qu = replace_na(fireplace_qu, "No_Fireplace"),
+    exter_qual = factor(exter_qual, 
+                      levels = c("Excellent", 
+                                 "Good", 
+                                 "Typical", 
+                                 "Fair"),
+                      ordered = TRUE)
+  ) 
 
 y = housing_train |> pull(sale_price) 
 x = model.matrix(sale_price ~., housing_train)[,-1]
 
-x_test = model.matrix(sale_price ~ ., housing_test)[,-1]
 y_test = housing_test$sale_price
+x_test = model.matrix(sale_price ~ ., housing_test)[,-1]
 ```
 
 ## a - LASSO Model
